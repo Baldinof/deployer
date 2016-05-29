@@ -15,6 +15,7 @@ use Deployer\Stage\StageStrategy;
 use Deployer\Task;
 use Deployer\Collection;
 use Deployer\Console\TaskCommand;
+use Pimple\Container;
 use Symfony\Component\Console;
 
 /**
@@ -24,7 +25,7 @@ use Symfony\Component\Console;
  * @property Server\EnvironmentCollection|Server\Environment[] $environments
  * @property Collection\Collection $parameters
  */
-class Deployer
+class Deployer extends Container
 {
     /**
      * Global instance of deployer. It's can be accessed only after constructor call.
@@ -48,16 +49,6 @@ class Deployer
     private $output;
 
     /**
-     * @var Collection\Collection
-     */
-    private $collections;
-
-    /**
-     * @var StageStrategy
-     */
-    private $stageStrategy;
-
-    /**
      * @param Application $console
      * @param Console\Input\InputInterface $input
      * @param Console\Output\OutputInterface $output
@@ -68,14 +59,29 @@ class Deployer
         $this->input = $input;
         $this->output = $output;
 
-        $this->collections = new Collection\Collection();
-        $this->collections['tasks'] = new Task\TaskCollection();
-        $this->collections['scenarios'] = new Task\Scenario\ScenarioCollection();
-        $this->collections['servers'] = new Server\ServerCollection();
-        $this->collections['environments'] = new Server\EnvironmentCollection();
-        $this->collections['parameters'] = new Collection\Collection();
+        $this['tasks'] = function() {
+            return new Task\TaskCollection();
+        };
 
-        $this->stageStrategy = new StageStrategy($this->servers, $this->environments, $this->parameters);
+        $this['scenarios'] = function() {
+            return new Task\Scenario\ScenarioCollection();
+        };
+
+        $this['servers'] = function() {
+            return new Server\ServerCollection();
+        };
+
+        $this['environments'] = function() {
+            return new Server\EnvironmentCollection();
+        };
+
+        $this['parameters'] = function() {
+            return new Collection\Collection();
+        };
+
+        $this['stage_strategy'] = function(Container $container) {
+            return new StageStrategy($container['servers'], $container['environments'], $container['parameters']);
+        };
 
         self::$instance = $this;
     }
@@ -94,7 +100,7 @@ class Deployer
     public function run()
     {
         $this->addConsoleCommands();
-        
+
         $this->console->add(new WorkerCommand($this));
         $this->console->add(new InitCommand());
 
@@ -107,12 +113,12 @@ class Deployer
     public function addConsoleCommands()
     {
         $this->console->addUserArgumentsAndOptions();
-        
+
         foreach ($this->tasks as $name => $task) {
             if ($task->isPrivate()) {
                 continue;
             }
-            
+
             $this->console->add(new TaskCommand($name, $task->getDescription(), $this));
         }
     }
@@ -140,8 +146,8 @@ class Deployer
      */
     public function __get($name)
     {
-        if ($this->collections->has($name)) {
-            return $this->collections[$name];
+        if (isset($this[$name])) {
+            return $this[$name];
         } else {
             throw new \InvalidArgumentException("Property \"$name\" does not exist.");
         }
@@ -169,6 +175,6 @@ class Deployer
      */
     public function getStageStrategy()
     {
-        return $this->stageStrategy;
+        return $this['stage_strategy'];
     }
 }
